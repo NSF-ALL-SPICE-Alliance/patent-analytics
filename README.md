@@ -4,7 +4,7 @@ Click "Open in Colab" below for a google colab notebook that scrapes google pate
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/gist/ConnorFlynn/a61c9ea2ed804dc38a6d6a3ba1431089/patent_scraping.ipynb)
 
-Check out the R folder for RMarkdowns that perform patent analytics
+Check out RMarkdowns that perform patent analytics ending with .Rmd
 
 
 #### Students
