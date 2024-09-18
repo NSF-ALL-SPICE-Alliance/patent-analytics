@@ -1,0 +1,91 @@
+---
+title: 'patentsview'
+author: "Wilneris C. Colon"
+date: "12/12/2023"
+output: html_document
+---
+
+```{r Setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(visNetwork)
+library(dplyr)
+library(patentsview)
+```
+
+
+```{r Data Query}
+#creating a variable that specifically searches for Inorganic Nanomaterials (CO1B)
+query <- qry_funs$eq(cpc_subsection_id = "C01B")
+
+#creating a list of fields to pull from patentsview
+fields <- c(
+  "patent_number", 
+  "patent_title",
+  "cited_patent_number",
+  "citedby_patent_number" 
+)
+
+#sending a query request directly to the patentsview API
+res <- search_pv(query, fields = fields, all_pages = TRUE)
+#Error in request_apply(res, method, query, base_url, arg_list, ...) :
+#No records matched your query...Can't download multiple pagesFALSE
+
+#un nesting the data found in the list columns
+pat_lst <- unnest_pv_data(req$data, pk = "patent_number")
+```
+
+
+
+```{r Making a Dataframe}
+class(pat_lst)
+
+pat_lst_df <- as.data.frame(pat_lst)
+#when ran, code returns this error:
+#Error in (function (..., row.names = NULL, check.rows = FALSE, check.names = TRUE,  : 
+#  arguments imply differing number of rows: 971, 954, 11
+
+#this code chunk aims to make the columns and rows equal to one another
+has_na <- sapply(pat_lst, function(x) any(is.na(x)))
+print(has_na)
+
+na_positions_cited <- which(sapply(pat_lst$cited_patents, function(x) any(is.na(x))))
+na_positions_cited
+
+na_positions_citedby <- which(sapply(pat_lst$citedby_patents, function(x) any(is.na(x))))
+na_positions_citedby
+
+pat_list_cleaned <- lapply(pat_lst, function(x) ifelse(is.na(x), 0, x))
+pat_lst_df <- as.data.frame(pat_list_cleaned)
+```
+
+
+```{r Network Set-Up}
+pat_lst
+pat_title <- function(title, number) {
+  temp_title <- str_wrap(title)
+  i <- gsub("\\n", "<br>", temp_title)
+  paste0('<a href="https://patents.google.com/patent/US', number, '">', i, '</a>')
+}
+
+edges <-
+  pat_lst$cited_patents %>%
+    semi_join(x = ., y = ., by = c("cited_patent_number" = "patent_number")) %>%
+    set_colnames(c("from", "to"))
+
+nodes <-
+  pat_lst$patents %>%
+    mutate(
+      id = patent_number,
+      label = patent_number,
+      title = pat_title(patent_title, patent_number)
+    )
+```
+
+
+
+
+```{r Ta-daa!}
+
+```
+

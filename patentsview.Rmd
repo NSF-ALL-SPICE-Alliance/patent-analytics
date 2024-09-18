@@ -1,0 +1,159 @@
+---
+title: "Patentsview"
+author: "Connor Flynn"
+date: "10/30/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(patentsview)
+library(tidyverse) # for data manipulation
+library(highcharter) # wrapper of highchart library to generate interactive visualisations
+library(here)
+library(leaflet)
+library(htmltools)
+library(ggmap)
+```
+
+```{r}
+
+query <- 
+  with_qfuns(
+    and(
+    #   gte(patent_date = "2016-01-01"),
+    or(
+        #text_all(patent_abstract = "nano"),
+        #text_all(patent_abstract = "nanomaterial"),
+        text_all(patent_abstract = "carbon nanotubes")
+        
+    )))
+# ,
+#       or(
+#         qry_funs$eq(cpc_subsection_id = "G02B"),
+#         qry_funs$eq(cpc_subsection_id = "G09B"),
+#         qry_funs$eq(cpc_subsection_id = "G01"),
+#         qry_funs$eq(cpc_subsection_id = "G21K"),
+#         qry_funs$eq(cpc_subsection_id = "B64"),
+#         qry_funs$eq(cpc_subsection_id = "G08"),
+#         qry_funs$eq(cpc_subsection_id = "G05"))
+#     )
+#   )
+```
+
+Are there more interesting fields to collect?
+
+
+```{r}
+fields <- c("patent_number", "assignee_organization",
+            "patent_num_cited_by_us_patents", "app_date", "patent_date",
+            "assignee_total_num_patents", "forprior_country", "assignee_id", "assignee_longitude", "assignee_latitude")
+```
+
+```{r}
+pv_out <- search_pv(query = query, fields = fields, all_pages = TRUE)
+```
+
+
+
+```{r}
+data <- pv_out$data
+
+data <- data$patents
+```
+
+
+```{r}
+data_unnested <- unnest(data, cols = "assignees")
+```
+
+
+```{r}
+datad <-
+  pv_out$data$patents %>%
+    unnest(assignees) %>%
+    select(assignee_id, assignee_organization, patent_number,
+           assignee_longitude, assignee_latitude) %>%
+    group_by_at(vars(-matches("pat"))) %>%
+    mutate(num_pats = n()) %>%
+    ungroup() %>%
+    select(-patent_number) %>%
+    distinct() %>%
+    mutate(popup = paste0("<font color='Black'>",
+                          htmlEscape(assignee_organization), "<br><br>Patents:",
+                          num_pats, "</font>")) %>%
+    mutate_at(vars(matches("_l")), as.numeric) %>%
+    filter(!is.na(assignee_id))
+
+map <- leaflet(datad) %>%
+  addProviderTiles(providers$CartoDB.PositronNoLabels) %>%
+  addCircleMarkers(lng = ~assignee_longitude, lat = ~assignee_latitude,
+                   popup = ~popup, ~sqrt(num_pats), color = "#18BC9C")
+map
+```
+
+
+
+```{r}
+dl <- unnest_pv_data(data = pv_out$data, pk = "patent_number")
+```
+
+```{r}
+top_asgns <-
+  dl$assignees %>%
+  filter(!is.na(assignee_organization)) %>% # we filter out those patents that are assigned to an inventor without an organization (we want only organizations)
+  mutate(ttl_pats = as.numeric(assignee_total_num_patents)) %>% #we create a numeric column (ttl_pats) with total number of patents of assignee
+  group_by(assignee_organization, ttl_pats) %>% # we group assignees by total number of patents (ttl_pats)
+  summarise(db_pats = n()) %>%
+  mutate(frac_db_pats = round(db_pats / ttl_pats, 3)) %>% #we calculate the fraction of patents from the total patents each assignee has
+  ungroup() %>%
+  select(c(1, 3, 2, 4)) %>%
+  arrange(desc(db_pats)) %>%
+  slice(1:75)
+```
+
+```{r}
+data <-
+  top_asgns %>%
+  select(-contains("pats")) %>%
+  slice(1:5) %>% #we filter top 5
+  inner_join(dl$assignees) %>%
+  inner_join(dl$applications) %>%
+  mutate(app_yr = as.numeric(substr(app_date, 1, 4))) %>% #we create a new column taking only the year form the date
+  group_by(assignee_organization, app_yr) %>%
+  count()
+```
+
+```{r}
+
+data %>% 
+  hchart(., 
+         type = "line", 
+         hcaes(x = data$app_yr, 
+               y = data$n,
+                 group = data$assignee_organization)) %>%
+  hc_plotOptions(series = list(marker = list(enabled = FALSE))) %>%
+  hc_xAxis(title = list(text = "Published applications")) %>%
+  hc_yAxis(title = list(text = "Patents on Carbon Nanotubes")) %>%
+  hc_title(text = "Top 5 assignees patenting on 'Carbon Nanotubes'") %>%
+  hc_subtitle(text = "Annual patent applications through time")
+
+```
+
+To do: 
+Different keywords
+Map with color indicating patents per country (change color over time)
+
+```{r}
+# Create a data frame with the keywords
+keywords <- data.frame(
+  TwoDMaterials = c("Graphene", "Graphene Oxide", "Graphene derivatives", "Transition Metal Dichalcogenides", "Boron Nitride", "Phosphorene", "Sillicene", "Stanene", "MXene", "Black phosphorus"),
+  ThreeDMaterials = c("Nanocomposites", "Nanoparticles", "Nanotubes", "Nanowires", "Nanorods", "Nanofibers", "Quantom Dots", "Nanoclays", "Nanoplates", "Nanocapsules"),
+  Technology = c("Nanotechnology", "Nanomaterial synthesis", "Nanocomposite materials", "Nanoelectronics", "Nanophotonics", "Nanomechanics", "Nanosensors", "Nanocarriers", "3D Printing", "Nanomedicine"),
+  Applications = c("Carbon nanotube composites", "Graphene-based sensors", "3D-printed nanomaterials", "Nanomaterials for energy storage", "Nanomaterials for drug delivery", "Nanomaterials for electronics", "Nanomaterials for aerospace", "Nanomaterials for medical devices", "Nanomaterials for catalysis", "Nanomaterials for coatings")
+)
+
+print(keywords)
+
+```
+

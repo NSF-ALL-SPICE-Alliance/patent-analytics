@@ -1,0 +1,207 @@
+---
+output: html_document
+name:  "Wilneris C. Colon"
+class: "CS201-01-1 Intro to R"
+date:  "2023-12-01"
+---
+<br>
+<center><span style="font-size: larger;">__CS201-01-1: Unveiling Trends - Exploring Google's Patent Database__</span></center>
+<center><span style="font-size: larger;">__Wilneris C.Colon__</span></center>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(patentsview)
+library(dplyr)
+library(kableExtra)
+library(here)
+library(magrittr)
+library(htmltools)
+library(leaflet)
+library(stringr)
+library(plotly)
+library(RColorBrewer)
+library(ggmap)
+library(knitr)
+library(visNetwork)
+library(ggplot2)
+```
+
+##### Background
+Patents play a pivotal role in providing inventors and innovators with exclusive rights to their creations. Unraveling patterns and trends within the landscape of intellectual property is important for market understanding, strategic planning, competitive edge, licensing, or legal protection.
+
+##### Objective
+To investigate and uncover notable trends within the "patentsview" package- an R client to the 'PatentsView' API. with recognizing the role patents play in granting exclusive rights to inventors and innovators, this analysis seeks to discern patterns that hold significance for market understanding.
+
+##### Dataset Overview
+The PatentsView API provides an interface to a disambiguated version of USPTO. PatentsView began in 2012 and since its inception, the collaborators have developed and deployed several web-based tools and databases. 
+
+```{r}
+query <- 
+  with_qfuns(
+    and(
+    #   gte(patent_date = "2016-01-01"),
+    or(
+        #text_all(patent_abstract = "nano"),
+        #text_all(patent_abstract = "nanomaterial"),
+        text_all(patent_abstract = "carbon nanotubes")
+        
+    )))
+# ,
+#       or(
+#         qry_funs$eq(cpc_subsection_id = "G02B"),
+#         qry_funs$eq(cpc_subsection_id = "G09B"),
+#         qry_funs$eq(cpc_subsection_id = "G01"),
+#         qry_funs$eq(cpc_subsection_id = "G21K"),
+#         qry_funs$eq(cpc_subsection_id = "B64"),
+#         qry_funs$eq(cpc_subsection_id = "G08"),
+#         qry_funs$eq(cpc_subsection_id = "G05"))
+#     )
+#   )
+
+fields <- c("patent_number", "assignee_organization",
+            "patent_num_cited_by_us_patents", "app_date", "patent_date",
+            "assignee_total_num_patents", "forprior_country", "assignee_id", "assignee_longitude", "assignee_latitude")
+
+pv_out <- search_pv(query = query, fields = fields, all_pages = TRUE)
+
+data <- pv_out$data
+
+data <- data$patents
+
+data_unnested <- unnest(data, cols = "assignees")
+
+datad <-
+  pv_out$data$patents %>%
+    unnest(assignees) %>%
+    select(assignee_id, assignee_organization, patent_number,
+           assignee_longitude, assignee_latitude) %>%
+    group_by_at(vars(-matches("pat"))) %>%
+    mutate(num_pats = n()) %>%
+    ungroup() %>%
+    select(-patent_number) %>%
+    distinct() %>%
+    mutate(popup = paste0("<font color='Black'>",
+                          htmlEscape(assignee_organization), "<br><br>Patents:",
+                          num_pats, "</font>")) %>%
+    mutate_at(vars(matches("_l")), as.numeric) %>%
+    filter(!is.na(assignee_id))
+
+map <- leaflet(datad) %>%
+  addProviderTiles(providers$CartoDB.PositronNoLabels) %>%
+  addCircleMarkers(lng = ~assignee_longitude, lat = ~assignee_latitude,
+                   popup = ~popup, ~sqrt(num_pats), color = "steelblue")
+map
+```
+
+##### Data Frame Overview
+Today we will be exploring and utilizing one of their smaller patent data sets. For the purposes of my data analysis, I manually entered the data into a dataframe (see snippet below). It's worth noting that patent data sets are available for download, and each PatentsView tool comes with its own data dictionary. These dictionaries prove helpful in understanding and selecting the desired variables from a specific PatentsView tool.
+
+```{r}
+pat_data <- data.frame(
+  pat_number = c(10095778, 6339767, 6499026, 7523126, 7716226, 7797336, 7966328, 
+                   8131701, 8504560, 8818996, 9075849),
+  pat_id = c(6339767, 6499026, 7523126, 7797336, 7966328, 10095778, 7716226, 
+                8131701, 8504560, 8818996, 9075849),
+  pat_class = c("Data Processing", "Computing", "Data Processing",
+                   "Physics", "Information Management", "Probabilistic Model", 
+                   "Probabilistic Model", "Information Management", "Probabilistic Model", 
+                   "Probabilistic Model", "Computing"),
+  pat_publisher = c("PatentRatings LLC", "Datacloud Technologies LLC", 
+                "Datacloud Technologies LLC", "Datacloud Technologies LLC", 
+                "Oracle International Corp", "Individual", 
+                "PatentRatings LLC", "PatentRatings LLC", "PatentRatings LLC", 
+                "PatentRatings LLC", "PatentRatings LLC"),
+  pat_published = c(2005, 1997, 1997, 1997, 2016, 2005, 2005, 2012, 2013, 2005, 2014)
+)
+
+kable(pat_data, format = "markdown", align = "l") %>% 
+      kable_styling(latex_options = "scale_down")
+```
+
+##### Comparative Analysis of Publisher Distribution: What can our results show from examining the distribution of patents among publishers?
+The given R code generates a pie chart using the plotly library to display the distribution of patents based on their publishers. The `plot_ly` function is used to create the chart, where the `labels` argument represents the unique publisher names extracted from the `pat_data` dataset, and the `values` argument corresponds to the frequency of patents associated with each publisher. The `type` parameter is set to "pie" to specify the chart type. Additionally, the `layout` function is utilized to customize the chart, with the `title` parameter set to "Proportion of Patents by Publisher". This code provides a clear and concise visualization of how patents are distributed among different publishers.
+
+```{r}
+blues_palette <- brewer.pal(n = length(pat_data), name = "Blues")
+
+plot_ly(labels = table(pat_data$pat_publisher) %>% 
+          names(), values = table(pat_data$pat_publisher), type="pie", marker = list(colors = blues_palette))
+```
+Results indicate four distinct publishers in the patent landscape, with PatentRating LLC being a prominent player owning 6 out of the 11 patents examined. This observation highlights the strategic positioning of certain entities in the intellectual property landscape, and further provide valuable information on such publishers.
+
+
+##### Comparative Analysis of Patent Class: What types of patent classes are present in the dataset, and how do these classes compare in terms of their representation and distribution among the patents?
+The provided R code utilizes the ggplot2 library to generate a bar chart that visualizes the distribution of patents based on their assigned classes. The ggplot function is employed to specify the dataset (pat_data) and the aesthetic mapping (aes). In this case, the x-axis (x) is mapped to the patent classes (pat_class). The geom_bar() function is then used to create the actual bar chart. Each bar represents a unique patent class, and the height of the bar corresponds to the count of patents within that class. The labs function is employed to set the title of the chart to "Distribution of Patents by Class" and to label the x-axis as "Class" and the y-axis as "Count." This code succinctly produces a visual representation of how patents are distributed across different classes, offering insights into the frequency of patents within each class.
+
+```{r}
+ggplot(data = pat_data, aes(x = pat_class)) +
+  geom_bar(fill = "steelblue") +
+  labs(x = "Patent Classification",
+       y = "Count")
+```
+
+Results indicate that there is a varied landscape of patents, with some classes standing out more than others. The "Probablistic Model" class has the highest count of 4 patents, followed closely by the "Computing", "Data Processing", and "Information Management" classes, each consisting of 2 patents each. The "Physics" class has only one patent. This graphical representation not only provides a clear snapshot of the relative frequency of patents within each class but also facilitates a comparative understanding of their respective importance and prevalence in the data set.
+
+
+##### Exploratative Analysis of Patent Citations: Are there any insights from the citation data, and are there discernible connections or patterns within the dataset?
+
+The visNetwork function is used to initialize the network visualization, with nodes and edges as the data sources. The visualization is set to have a height of "400px" and a width of "100%". The visEdges function is then used to customize the appearance of the edges by enabling arrows indicating the direction of connections. The visIgraphLayout function is applied to specify the layout of the network using the igraph layout algorithm. The length of the color palette should match the number of nodes in the network.This code creates an interactive network visualization with edges having arrows and nodes colored using the Blues color palette from ColorBrewer. Adjustments can be made to the nodes and edges data sets to match the specific characteristics of your network data.
+
+```{r, include=FALSE}
+query <- qry_funs$begins(cpc_subgroup_id = "Y10S707/933")
+
+#creating a list of fields to pull from the API
+fields <- c(
+  "patent_number", 
+  "patent_title",
+  "cited_patent_number",  # Which patents do these patents cite?
+  "citedby_patent_number" # Which patents cite them?
+)
+
+#sending a request to the API
+res <- search_pv(query, fields = fields, all_pages = TRUE)
+
+#un nesting the data found in the list columns
+pat_lst <- unnest_pv_data(res$data, pk = "patent_number")
+
+pat_title <- function(title, number) {
+  temp_title <- str_wrap(title)
+  i <- gsub("\\n", "<br>", temp_title)
+  paste0('<a href="https://patents.google.com/patent/US', number, '">', i, '</a>')
+}
+
+edges <-
+  pat_lst$cited_patents %>%
+    semi_join(x = ., y = ., by = c("cited_patent_number" = "patent_number")) %>%
+    set_colnames(c("from", "to"))
+
+nodes <-
+  pat_lst$patents %>%
+    mutate(
+      id = patent_number,
+      label = patent_number,
+      title = pat_title(patent_title, patent_number)
+    )
+```
+
+```{r}
+visNetwork(
+  nodes = nodes, edges = edges, height = "400px", width = "100%",
+) %>%
+  visEdges(arrows = list(to = list(enabled = TRUE))) %>%
+  visIgraphLayout()
+```
+
+Results indicate that several patents cite patent number 6499026. This indicates that this patent contains technology that is common to the field. When we hover over the nodes we see that several of the patents have the same title. Clicking on the titles brings us to their full text on Google Patents, which confirms that many of these PCA patents belong to the same patent family.
+
+```{r}
+pat_lst
+
+data <- pat_lst$data
+
+data
+
+#testing how to turn the list into a dataframe ^^
+```
+
